@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>AIN'S PROJECT</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#060716;color:#e9f7ff;font-family:system-ui,Segoe UI,sans-serif;overflow:hidden}
+video{display:none}canvas{position:fixed;inset:0;width:100%;height:100%}
+header{position:fixed;top:18px;left:20px;z-index:2;pointer-events:none}
+h1{font-size:clamp(17px,3vw,28px);margin:0;letter-spacing:.08em;text-shadow:0 0 20px #00e5ff}
+p{margin:6px 0;font-size:13px;color:#b8c9e8}
+#status{position:fixed;bottom:16px;left:16px;z-index:3;background:#081125cc;border:1px solid #24c5ff55;padding:10px 14px;border-radius:12px;font-size:13px;max-width:min(590px,calc(100vw - 32px))}
+#mode{position:fixed;top:20px;right:20px;z-index:3;background:#081125cc;border:1px solid #24c5ff55;border-radius:12px;padding:10px 14px;font-size:13px}
+#count{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:4;pointer-events:none;font-size:min(26vw,190px);font-weight:900;color:#fff;text-shadow:0 0 25px #00dfff,0 0 65px #f678ff}
+#clear{position:fixed;right:20px;bottom:20px;z-index:4;border:1px solid #7eefff;background:#061d31;color:white;border-radius:10px;padding:10px 14px;cursor:pointer;display:none}
+#startScreen{position:fixed;inset:0;z-index:20;background:#060716ee;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;text-align:center;padding:24px}#startCamera{background:#0be0ff;color:#061021;border:0;border-radius:14px;padding:15px 26px;font-size:18px;font-weight:800}#rotate{display:none;position:fixed;inset:0;z-index:15;background:#060716ed;align-items:center;justify-content:center;text-align:center;padding:25px;font-size:22px;font-weight:700} @media(orientation:portrait) and (max-width:900px){#rotate{display:flex}}@media(max-height:550px){header{top:8px;left:12px}h1{font-size:17px}header p{font-size:10px}#mode{top:8px;right:8px;font-size:11px;padding:7px}#status{bottom:7px;left:8px;font-size:10px;padding:7px;max-width:65vw}#clear{right:8px;bottom:8px;padding:8px;font-size:12px}}
+</style>
+</head>
+<body>
+<video id="video" autoplay muted playsinline></video>
+<canvas id="canvas"></canvas><canvas id="drawing" style="pointer-events:none"></canvas>
+<header><h1>AIN'S PROJECT</h1><p id="hint">✋ Spider Web · Two L hands: Frame · ☝ Drawing</p></header>
+<div id="mode">MODE 1 · SPIDER WEB</div><div id="count"></div>
+<div id="status">Tap Start Camera to begin</div><div id="rotate">📱 Pusing iPhone melintang untuk main AIN’S PROJECT</div><div id="startScreen"><h1>AIN’S PROJECT</h1><p>iPhone Landscape · 3 Hand Gesture Modes</p><button id="startCamera">Start Camera 📷</button><p>Allow camera access in Safari when prompted.</p></div><button id="clear">Clear Drawing</button>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js"></script>
+<script>
+const video=document.getElementById('video'),canvas=document.getElementById('canvas'),ctx=canvas.getContext('2d');
+const drawing=document.getElementById('drawing'),dctx=drawing.getContext('2d');
+const statusEl=document.getElementById('status'),modeEl=document.getElementById('mode'),countEl=document.getElementById('count'),clearBtn=document.getElementById('clear');
+let latest=[],mode=1,gestureTarget=0,gestureSince=0,gestureLocked=false,prevPen=null,prevErase=null;
+let busy=false,lastFrame=0;
+const names={1:'SPIDER WEB',2:'MAGIC PHOTO FRAME',3:'AIR DRAWING'};
+const mirrored=document.createElement('canvas'),mctx=mirrored.getContext('2d');
+function resize(){const dpr=Math.min(devicePixelRatio||1,2);const old=document.createElement('canvas');old.width=drawing.width;old.height=drawing.height;old.getContext('2d').drawImage(drawing,0,0);canvas.width=Math.round(innerWidth*dpr);canvas.height=Math.round(innerHeight*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);drawing.width=Math.round(innerWidth*dpr);drawing.height=Math.round(innerHeight*dpr);dctx.setTransform(dpr,0,0,dpr,0,0);if(old.width)dctx.drawImage(old,0,0,old.width,old.height,0,0,innerWidth,innerHeight);mirrored.width=innerWidth;mirrored.height=innerHeight}
+addEventListener('resize',resize);resize();
+function point(p){return{x:(1-p.x)*innerWidth,y:p.y*innerHeight}}
+function distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
+function fingerUp(h,tip,pip,mcp){return distance(h[tip],h[0])>distance(h[pip],h[0])*1.12&&distance(h[tip],h[mcp])>distance(h[pip],h[mcp])*1.3}
+function state(h){return{index:fingerUp(h,8,6,5),middle:fingerUp(h,12,10,9),ring:fingerUp(h,16,14,13),pinky:fingerUp(h,20,18,17),thumb:distance(h[4],h[5])>distance(h[3],h[5])*1.12}}
+function isOne(s){return s.index&&!s.middle&&!s.ring&&!s.pinky&&!s.thumb}
+function isTwo(s){return s.index&&s.middle&&!s.ring&&!s.pinky&&!s.thumb}
+function isPalm(s){return s.index&&s.middle&&s.ring&&s.pinky&&s.thumb}
+function isL(s){return s.index&&s.thumb&&!s.middle&&!s.ring&&!s.pinky}
+function twoL(hands){if(hands.length!==2)return false;let [a,b]=hands;if(point(a[0]).x>point(b[0]).x)[a,b]=[b,a];const sa=state(a),sb=state(b);if(!isL(sa)||!isL(sb))return false;
+// Both thumbs must point toward the middle of the mirrored image.
+const la=point(a[4]),lb=point(b[4]),lai=point(a[5]),lbi=point(b[5]);
+return la.x>lai.x+12&&lb.x<lbi.x-12;
+}
+function chooseGesture(hands){if(twoL(hands))return 2;if(hands.some(h=>isPalm(state(h))))return 1;if(hands.length===1&&isOne(state(hands[0])))return 3;return 0}
+function changeMode(next){mode=next;gestureTarget=0;gestureSince=0;gestureLocked=true;prevPen=null;prevErase=null;modeEl.textContent=`MODE ${mode} · ${names[mode]}`;clearBtn.style.display=mode===3?'block':'none';statusEl.textContent=`Mode ${mode} activated!`;countEl.style.display='none'}
+function updateGesture(now){const target=chooseGesture(latest);if(!target||target===mode){gestureTarget=0;gestureSince=0;countEl.style.display='none';if(!target)gestureLocked=false;return}
+if(gestureLocked){countEl.style.display='none';return}
+if(gestureTarget!==target){gestureTarget=target;gestureSince=now}
+const remaining=Math.max(0,1000-(now-gestureSince));countEl.textContent=Math.max(1,Math.ceil(remaining/1000));countEl.style.display='flex';
+if(remaining===0)changeMode(target)}
+function glowDot(x,y,hue,r=3){ctx.save();ctx.shadowBlur=17;ctx.shadowColor=`hsl(${hue},100%,65%)`;ctx.fillStyle=`hsl(${hue},100%,82%)`;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();ctx.restore()}
+function line(a,b,hue,alpha=.65,width=.8){ctx.save();ctx.globalAlpha=alpha;ctx.lineWidth=width;ctx.shadowBlur=8;ctx.shadowColor=`hsl(${hue},100%,65%)`;const g=ctx.createLinearGradient(a.x,a.y,b.x,b.y);g.addColorStop(0,'#f678ff');g.addColorStop(.5,`hsl(${hue},100%,75%)`);g.addColorStop(1,'#e7ff80');ctx.strokeStyle=g;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();ctx.restore()}
+function spider(hands,t){hands.forEach((h,k)=>h.forEach((p,i)=>glowDot(p.x,p.y,(i*13+k*130+t*.015)%360,i%4===0?3.8:2.4)));
+if(hands.length!==2)return;let[a,b]=hands;if(a[0].x>b[0].x)[a,b]=[b,a];const ids=[4,8,12,16,20];const separation=distance(a[0],b[0]);const hue=180+Math.min(100,separation/innerWidth*100);
+for(let i=0;i<5;i++)for(let j=0;j<5;j++){const aa=a[ids[i]],bb=b[ids[j]],wobble=Math.sin(t*.002+i*1.7+j*.9)*Math.min(13,separation*.025);line({x:aa.x,y:aa.y+wobble},{x:bb.x,y:bb.y-wobble},hue+i*14+j*5,.15+(i===j?.52:.08),i===j?1.2:.55)}}
+function frame(hands,t){hands.forEach(h=>[4,8].forEach(i=>glowDot(h[i].x,h[i].y,190,5)));if(hands.length!==2)return;
+let[a,b]=hands;if(a[0].x>b[0].x)[a,b]=[b,a];
+const left=Math.min(a[8].x,a[4].x),right=Math.max(b[8].x,b[4].x);
+const top=Math.min(a[8].y,b[8].y),bottom=Math.max(a[4].y,b[4].y);
+if(right-left<65||bottom-top<55)return;
+ctx.save();ctx.beginPath();ctx.rect(left,top,right-left,bottom-top);ctx.clip();ctx.filter='grayscale(100%) contrast(1.15)';ctx.drawImage(mirrored,0,0,innerWidth,innerHeight);ctx.restore();
+ctx.save();ctx.strokeStyle='#baf7ff';ctx.lineWidth=3;ctx.shadowBlur=22;ctx.shadowColor='#00eaff';ctx.strokeRect(left,top,right-left,bottom-top);ctx.restore();
+ctx.save();ctx.font='12px system-ui';ctx.fillStyle='#d8faff';ctx.fillText('LIVE FRAME',left+8,Math.max(18,top-8));ctx.restore()}
+function draw(hands){if(hands.length!==1){prevPen=null;prevErase=null;return}const h=hands[0],s=state(latest[0]);const p=h[8];
+if(isOne(s)){prevErase=null;glowDot(p.x,p.y,190,7);if(prevPen&&distance(p,prevPen)<120){dctx.save();dctx.strokeStyle='#a8f9ff';dctx.lineWidth=5;dctx.lineCap='round';dctx.lineJoin='round';dctx.shadowColor='#00cfff';dctx.shadowBlur=12;dctx.beginPath();dctx.moveTo(prevPen.x,prevPen.y);dctx.lineTo(p.x,p.y);dctx.stroke();dctx.restore()}prevPen=p}
+else if(isTwo(s)){prevPen=null;const e={x:(h[8].x+h[12].x)/2,y:(h[8].y+h[12].y)/2};dctx.save();dctx.globalCompositeOperation='destination-out';dctx.beginPath();dctx.arc(e.x,e.y,25,0,Math.PI*2);dctx.fill();if(prevErase&&distance(e,prevErase)<120){dctx.lineWidth=50;dctx.lineCap='round';dctx.strokeStyle='black';dctx.beginPath();dctx.moveTo(prevErase.x,prevErase.y);dctx.lineTo(e.x,e.y);dctx.stroke()}dctx.restore();prevErase=e;ctx.save();ctx.strokeStyle='#ffec8c';ctx.lineWidth=2;ctx.beginPath();ctx.arc(e.x,e.y,25,0,Math.PI*2);ctx.stroke();ctx.restore()}
+else{prevPen=null;prevErase=null}}
+function render(t){ctx.clearRect(0,0,innerWidth,innerHeight);if(video.readyState>=2){mctx.save();mctx.clearRect(0,0,innerWidth,innerHeight);mctx.translate(innerWidth,0);mctx.scale(-1,1);mctx.drawImage(video,0,0,innerWidth,innerHeight);mctx.restore();ctx.save();ctx.globalAlpha=.58;ctx.drawImage(mirrored,0,0,innerWidth,innerHeight);ctx.restore();ctx.fillStyle='rgba(3,5,18,.30)';ctx.fillRect(0,0,innerWidth,innerHeight)}else{ctx.fillStyle='#060716';ctx.fillRect(0,0,innerWidth,innerHeight)}
+const hands=latest.map(h=>h.map(point));if(mode===1)spider(hands,t);else if(mode===2)frame(hands,t);else if(mode===3)draw(hands);
+requestAnimationFrame(render)}requestAnimationFrame(render);
+clearBtn.onclick=()=>dctx.clearRect(0,0,innerWidth,innerHeight);
+async function start(){const btn=document.getElementById("startCamera");btn.disabled=true;btn.textContent="Starting…";try{if(!window.Hands)throw Error('MediaPipe Hands failed to load. Check internet.');const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:640},height:{ideal:360}},audio:false});video.srcObject=stream;await video.play();document.getElementById("startScreen").style.display="none";const hands=new Hands({locateFile:file=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${file}`});hands.setOptions({maxNumHands:2,modelComplexity:0,minDetectionConfidence:.6,minTrackingConfidence:.55});hands.onResults(results=>{latest=results.multiHandLandmarks||[];updateGesture(performance.now());statusEl.textContent=`Tracking ${latest.length}/2 hands · ✋ Spider · Two L hands Frame · ☝ Draw · ✌ Erase`});
+async function detect(time){if(time-lastFrame>45&&!busy&&video.readyState>=2){lastFrame=time;busy=true;try{await hands.send({image:video})}catch(e){statusEl.textContent='Tracking error: '+e.message}finally{busy=false}}requestAnimationFrame(detect)}requestAnimationFrame(detect)}catch(e){statusEl.textContent='Could not start: '+e.message;btn.disabled=false;btn.textContent='Try Again'}}
+document.getElementById('startCamera').addEventListener('click',start);
+</script>
+</body>
+</html>
